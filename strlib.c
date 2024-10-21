@@ -1,6 +1,41 @@
 #include <stdio.h>
 #include <string.h>
 
+// Helper function to detect if a byte is an ASCII character
+int is_ascii(unsigned char ch) {
+    return ch <= 0x7F;
+}
+
+// Helper function to determine the length of a UTF-8 code point based on the first byte
+int utf8_char_length(unsigned char ch) {
+    if (ch <= 0x7F) {
+        return 1; // ASCII
+    } else if ((ch & 0xE0) == 0xC0) {
+        return 2; // 2-byte sequence
+    } else if ((ch & 0xF0) == 0xE0) {
+        return 3; // 3-byte sequence
+    } else if ((ch & 0xF8) == 0xF0) {
+        return 4; // 4-byte sequence
+    }
+    return 1; // Fallback to 1 (invalid byte)
+}
+
+// Helper function to move to the next UTF-8 character in a string
+const char* utf8_next_char(const char *str) {
+    int char_len = utf8_char_length((unsigned char)*str);
+    return str + char_len;
+}
+
+// Function to find the nth code point index in the string
+const char* utf8_codepoint_at(const char *str, size_t index) {
+    size_t i = 0;
+    while (*str && i < index) {
+        str = utf8_next_char(str);
+        i++;
+    }
+    return str;
+}
+
 char toLower(char ch) {
     if (ch >= 'A' && ch <= 'Z') {
         return ch + ('a' - 'A');
@@ -25,15 +60,29 @@ void str_concat(char *dest, const char *src) {
     while ((*dest++ = *src++));
 }
 
+// Updated str_length function to count UTF-8 code points
 size_t str_length(const char *str) {
-    const char *s = str;
-    while (*s) s++;
-    return s - str;
+    size_t len = 0;
+    while (*str) {
+        int char_len = utf8_char_length((unsigned char)*str);
+        str += char_len; // Move to the next character (UTF-8 code point)
+        len++;           // Count one code point
+    }
+    return len;
 }
 
+// Updated str_indexOf to handle UTF-8 code points
 int str_indexOf(const char *str, const char *search) {
-    const char *p = strstr(str, search);
-    return p ? (int)(p - str) : -1;
+    const char *p = str;
+    size_t str_len = str_length(str);
+    size_t search_len = str_length(search);
+
+    for (size_t i = 0; i <= str_len - search_len; i++) {
+        if (strncmp(utf8_codepoint_at(str, i), search, strlen(search)) == 0) {
+            return i;
+        }
+    }
+    return -1;  // Return -1 if not found
 }
 
 int str_lastIndexOf(const char *str, const char *search) {
@@ -77,32 +126,43 @@ void str_trim(char *str) {
     *(end + 1) = '\0';
 }
 
+// Updated str_slice to handle UTF-8 code points
 void str_slice(const char *str, size_t start, size_t end, char *result) {
-    size_t len = str_length(str);
-    if (start >= len) {
-        result[0] = '\0';
+    const char *start_ptr = utf8_codepoint_at(str, start);
+    const char *end_ptr = utf8_codepoint_at(str, end);
+    size_t slice_len = end_ptr - start_ptr;
+    strncpy(result, start_ptr, slice_len);
+    result[slice_len] = '\\0';  // Null-terminate the result
+}
+
+// Updated str_padEnd to handle UTF-8 code points
+void str_padEnd(const char *str, size_t targetLength, const char *padStr, char *result) {
+    size_t str_len = str_length(str);
+    if (str_len >= targetLength) {
+        strcpy(result, str);
         return;
     }
-    if (end > len) end = len;
-    size_t j = 0;
-    for (size_t i = start; i < end; i++) {
-        result[j++] = str[i];
+
+    strcpy(result, str);
+    size_t remainingLength = targetLength - str_len;
+    size_t padStr_len = str_length(padStr);
+
+    // Append the padding string repeatedly until the desired length is reached
+    while (remainingLength > 0) {
+        strncat(result, padStr, remainingLength < padStr_len ? remainingLength : padStr_len);
+        remainingLength -= (remainingLength < padStr_len ? remainingLength : padStr_len);
     }
-    result[j] = '\0';
 }
 
-void str_padEnd(char *str, size_t length, const char *padStr) {
-    size_t str_len = str_length(str);
-    while (str_len < length) {
-        str_concat(str, padStr);
-        str_len = str_length(str);
-    }
-    str[str_len] = '\0';
-}
-
-void str_repeat(char *result, const char *str, size_t count) {
-    result[0] = '\0'; 
+// Updated str_repeat to handle UTF-8 code points
+void str_repeat(const char *str, size_t count, char *result) {
+    result[0] = '\\0';  // Initialize the result string as empty
     for (size_t i = 0; i < count; i++) {
-        str_concat(result, str);
+        strcat(result, str);
     }
+}
+
+// Updated str_substring to extract substrings based on UTF-8 code points
+void str_substring(const char *str, size_t start, size_t end, char *result) {
+    str_slice(str, start, end, result);
 }
